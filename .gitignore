@@ -1,0 +1,8 @@
+CATALOG/
+LIB/
+*.tar.gz
+*.tar.gz.sha256
+*.o
+*.dylib
+*.so
+*.dSYM/

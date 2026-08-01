@@ -1,0 +1,27 @@
+# Release json on a version tag: a portable source package plus the udt BASIC
+# codec.  (The mvx native binary is built into mvx itself via MVX_PACKAGES, not
+# shipped here.)  Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only.
+name: release
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+*"
+permissions:
+  contents: write
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: mvx-lang/mvx/.github/actions/publish-source@main
+        with:
+          package: mvx-lang/json
+          title: json
+          body: "JSON encode/decode with MAPFIELD projection. Source + udt BASIC codec; indexed by the package registry."
+  udt-binary:
+    runs-on: [self-hosted, linux, udt]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: mvx-lang/mv-package-registry/.github/actions/udt-build@main
+        with:
+          package: mvx-lang/json
