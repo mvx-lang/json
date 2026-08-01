@@ -4,6 +4,6 @@
   "description": "JSON encode/decode (JSONENCODE, JSONDECODE) with MAPFIELD projection",
   "license": "GPL-2.0-only",
   "systems": ["mvx", "udt"],
-  "dependencies": ["mapfield"],
+  "dependencies": ["mapfield@!mvx"],
   "deploy": {}
 }
