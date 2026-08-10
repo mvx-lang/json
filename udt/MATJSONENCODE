@@ -1,0 +1,21 @@
+SUBROUTINE MATJSONENCODE(MAT A, SPEC, JSON)
+* MVX json package — portable (UniData/BASIC) MATJSONENCODE: encode a DIMENSIONED
+* array as a JSON object per a MAPFIELD spec (the MATWRITE analogue of
+* JSONENCODE, and the inverse of MATJSONDECODE).  The array subscript is the
+* attribute position the spec maps, so A(pos) supplies what JSONENCODE reads
+* from <pos>:
+*   - a scalar field       -> A(pos)                      -> "key":value
+*   - an association        -> A(pos) as a @VM list        -> "key":[{...},...]
+* JSON returns the encoded object.  Typing / quoting / escaping / key-casing are
+* the encoder's (see JSONENCODE); this only re-containers the record.  Trailing
+* empty array elements are harmless — the encoder reads only mapped positions.
+* GPL-2.0-only.
+* JSONENCODE is a compiler intrinsic on mvx (native), a cataloged function on
+* udt — so declare it only off-mvx.  MATPARSE/MATBUILD and MAT params are native
+* on both, so this one source compiles for both platforms.
+$IFNDEF MVX
+   DEFFUN JSONENCODE(RX, SX)
+$ENDIF
+   MATBUILD R FROM A USING @AM
+   JSON = JSONENCODE(R, SPEC)
+   RETURN
