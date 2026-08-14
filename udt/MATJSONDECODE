@@ -1,0 +1,21 @@
+SUBROUTINE MATJSONDECODE(JSON, SPEC, MAT A)
+* MVX json package — portable (UniData/BASIC) MATJSONDECODE: decode JSON per a
+* MAPFIELD spec straight into a DIMENSIONED array (the MATREAD analogue of
+* JSONDECODE).  The spec's attribute position maps to the array SUBSCRIPT, so
+* A(pos) holds what JSONDECODE would put at <pos>:
+*   - a scalar field           -> A(pos) = the value
+*   - an association (array of  -> A(pos) = the parallel @VM multivalue list
+*     objects under a key)         (multivalues kept inside the one element,
+*                                   just as MATREAD leaves them; index A(pos)<1,i>)
+* DIM the array to at least the highest attribute position in the spec before
+* calling (an EQUATE include of the record layout is the tidy way to size it);
+* MATPARSE puts any overflow in the last element, MV's usual rule.  GPL-2.0-only.
+* JSONDECODE is a compiler intrinsic on mvx (native), a cataloged function on
+* udt — so declare it only off-mvx.  MATPARSE/MATBUILD and MAT params are native
+* on both, so this one source compiles for both platforms.
+$IFNDEF MVX
+   DEFFUN JSONDECODE(JX, SX)
+$ENDIF
+   R = JSONDECODE(JSON, SPEC)
+   MATPARSE A FROM R USING @AM
+   RETURN
