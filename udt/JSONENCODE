@@ -12,7 +12,7 @@ FUNCTION JSONENCODE(REC, SPEC)
    DQ = CHAR(34)
    BS = CHAR(92)
    NF = DCOUNT(SPEC, @AM)
-   OUT = "{"
+   JOUT = "{"
    FIRST = 1
 
 * --- single-valued fields (assoc empty) ------------------------------------
@@ -24,7 +24,7 @@ FUNCTION JSONENCODE(REC, SPEC)
          TYPE = FIELD(SPEC<FI>, @VM, 4)
          VAL = REC<ANO>
          IF CONV # "" THEN VAL = OCONV(VAL, CONV)
-         IF FIRST = 0 THEN OUT := ","
+         IF FIRST = 0 THEN JOUT := ","
          FIRST = 0
          GOSUB EMITKEY
          GOSUB EMITVAL
@@ -39,10 +39,10 @@ FUNCTION JSONENCODE(REC, SPEC)
    NEXT FI
    FOR AI = 1 TO DCOUNT(ASSOCS, @AM)
       ASC = ASSOCS<AI>
-      IF FIRST = 0 THEN OUT := ","
+      IF FIRST = 0 THEN JOUT := ","
       FIRST = 0
       NAME = ASC ; GOSUB EMITKEY
-      OUT := "["
+      JOUT := "["
       * the widest member decides how many objects to emit
       NV = 0
       FOR FI = 1 TO NF
@@ -52,8 +52,8 @@ FUNCTION JSONENCODE(REC, SPEC)
          END
       NEXT FI
       FOR SQ = 1 TO NV
-         IF SQ > 1 THEN OUT := ","
-         OUT := "{"
+         IF SQ > 1 THEN JOUT := ","
+         JOUT := "{"
          KFIRST = 1
          FOR FI = 1 TO NF
             IF FIELD(SPEC<FI>, @VM, 5) = ASC THEN
@@ -63,40 +63,40 @@ FUNCTION JSONENCODE(REC, SPEC)
                TYPE = FIELD(SPEC<FI>, @VM, 4)
                VAL = REC<ANO, SQ>
                IF CONV # "" THEN VAL = OCONV(VAL, CONV)
-               IF KFIRST = 0 THEN OUT := ","
+               IF KFIRST = 0 THEN JOUT := ","
                KFIRST = 0
                GOSUB EMITKEY
                GOSUB EMITVAL
             END
          NEXT FI
-         OUT := "}"
+         JOUT := "}"
       NEXT SQ
-      OUT := "]"
+      JOUT := "]"
    NEXT AI
 
-   OUT := "}"
-   RETURN OUT
+   JOUT := "}"
+   RETURN JOUT
 
 * EMITKEY: append  "lower(name)":  (name lowercased then escaped)
 EMITKEY:
    S = OCONV(NAME, "MCL")
    GOSUB ESCSTR
-   OUT := DQ : ESC : DQ : ":"
+   JOUT := DQ : ESC : DQ : ":"
    RETURN
 
 * EMITVAL: append the typed value of VAL (TYPE)
 EMITVAL:
    IF VAL = "" THEN
       IF TYPE = "NUMERIC" OR TYPE = "DATE" OR TYPE = "TIME" THEN
-         OUT := "null"
+         JOUT := "null"
       END ELSE
-         OUT := DQ : DQ
+         JOUT := DQ : DQ
       END
    END ELSE
       IF TYPE = "NUMERIC" THEN
-         OUT := VAL
+         JOUT := VAL
       END ELSE
-         S = VAL ; GOSUB ESCSTR ; OUT := DQ : ESC : DQ
+         S = VAL ; GOSUB ESCSTR ; JOUT := DQ : ESC : DQ
       END
    END
    RETURN
