@@ -11,12 +11,13 @@ FUNCTION JSONDECODE(JSON, SPEC)
 * after the key (no escape handling — sufficient for the registry).  GPL-2.0-only.
    RESULT = ""
    DQ = CHAR(34)
+   BS = CHAR(92)
    NF = DCOUNT(SPEC, @AM)
 
 * --- scalar fields (assoc empty): flat "key":"value" ------------------------
    FOR FI = 1 TO NF
       IF FIELD(SPEC<FI>, @VM, 5) = "" THEN
-         KEY = FIELD(SPEC<FI>, @VM, 1)
+         JKEY = FIELD(SPEC<FI>, @VM, 1)
          POS = FIELD(SPEC<FI>, @VM, 2)
          SRC = JSON ; GOSUB QVALUE
          RESULT<POS> = VAL
@@ -36,7 +37,8 @@ FUNCTION JSONDECODE(JSON, SPEC)
    FOR AI = 1 TO DCOUNT(ASSOCS, @AM)
       ASC = ASSOCS<AI>
       * the [ ... ] array that follows "asc"
-      AP = INDEX(JSON, DQ : ASC : DQ, 1)
+      * lowercased for the same reason as QVALUE's TAG
+      AP = INDEX(JSON, DQ : OCONV(ASC, "MCL") : DQ, 1)
       IF AP > 0 THEN
          TAIL = JSON[AP, LEN(JSON) - AP + 1]
          OB = INDEX(TAIL, "[", 1)
@@ -55,7 +57,7 @@ FUNCTION JSONDECODE(JSON, SPEC)
                EI = EI + 1
                FOR FI = 1 TO NF
                   IF FIELD(SPEC<FI>, @VM, 5) = ASC THEN
-                     KEY = FIELD(SPEC<FI>, @VM, 1)
+                     JKEY = FIELD(SPEC<FI>, @VM, 1)
                      POS = FIELD(SPEC<FI>, @VM, 2)
                      SRC = OBJ ; GOSUB QVALUE
                      RESULT<POS, EI> = VAL
@@ -66,23 +68,72 @@ FUNCTION JSONDECODE(JSON, SPEC)
          END
       END
    NEXT AI
-   RETURN RESULT
+   RETURN(RESULT)
 
-* QVALUE: VAL = the string value of "KEY":"..." in SRC (or "" if absent).
+* QVALUE: VAL = the value of "KEY":... in SRC (or "" if absent).
+*
+* NOT EVERY VALUE IS QUOTED.  This looked for the opening quote after the colon
+* and read to the next one -- so a number went straight past its own value and
+* returned the NEXT KEY'S NAME, and an escaped quote inside a string ended it
+* early.  Both were there from the start and neither is platform-specific; a
+* round-trip test found them, which is what a round-trip test is for.
+*
+*   "qty":42            -> 42, not "note"
+*   "note":"He said \"hi\""  -> He said "hi"
 QVALUE:
+   * EVERY NAME HERE IS THE CALLER'S NAME.  A GOSUB shares the whole variable
+   * space, and this is called from inside the association loop -- which counts
+   * its members with DONE.  Using DONE as a local flag here ended that loop
+   * after one member, silently, and the record came back with the first
+   * multivalue only.  The Q prefix is not decoration.
    VAL = ""
-   TAG = DQ : KEY : DQ
+   * THE ENCODER LOWERCASES EVERY KEY (JSONENCODE, EMITKEY: OCONV(NAME,"MCL")),
+   * so a lookup that uses the spec's own casing finds nothing the moment a
+   * spec key has a capital in it.  Fold it the same way, in the same place a
+   * reader will look for the reason.
+   TAG = DQ : OCONV(JKEY, "MCL") : DQ
    P = INDEX(SRC, TAG, 1)
    IF P > 0 THEN
-      AFTER = SRC[P + LEN(TAG), LEN(SRC)]
-      C = INDEX(AFTER, ":", 1)
+      QAFTER = SRC[P + LEN(TAG), LEN(SRC)]
+      C = INDEX(QAFTER, ":", 1)
       IF C > 0 THEN
-         AFTER = AFTER[C + 1, LEN(AFTER)]
-         OQ = INDEX(AFTER, DQ, 1)
-         IF OQ > 0 THEN
-            AFTER = AFTER[OQ + 1, LEN(AFTER)]
-            CQ = INDEX(AFTER, DQ, 1)
-            IF CQ > 0 THEN VAL = AFTER[1, CQ - 1]
+         QAFTER = QAFTER[C + 1, LEN(QAFTER)]
+         * skip the space a pretty-printer leaves after the colon
+         LOOP WHILE QAFTER[1,1] = " " DO QAFTER = QAFTER[2, LEN(QAFTER)] REPEAT
+         IF QAFTER[1,1] = DQ THEN
+            * a string: read to the closing quote, and a quote that is escaped
+            * is not the closing one.
+            QAFTER = QAFTER[2, LEN(QAFTER)]
+            I = 1 ; QDONE = 0
+            LOOP WHILE QDONE = 0 AND I <= LEN(QAFTER) DO
+               QCH = QAFTER[I,1]
+               BEGIN CASE
+                  CASE QCH = BS
+                     * \" \\ \/ keep the second character; the rest of the
+                     * escapes are the ones JSONENCODE emits by name.
+                     QNX = QAFTER[I+1,1]
+                     BEGIN CASE
+                        CASE QNX = "n" ; VAL := CHAR(10)
+                        CASE QNX = "t" ; VAL := CHAR(9)
+                        CASE QNX = "r" ; VAL := CHAR(13)
+                        CASE QNX = "b" ; VAL := CHAR(8)
+                        CASE QNX = "f" ; VAL := CHAR(12)
+                        CASE 1        ; VAL := QNX
+                     END CASE
+                     I += 2
+                  CASE QCH = DQ
+                     QDONE = 1
+                  CASE 1
+                     VAL := QCH ; I += 1
+               END CASE
+            REPEAT
+         END ELSE
+            * a number, true, false or null: it ends at the comma or the brace.
+            E = LEN(QAFTER) + 1
+            CM = INDEX(QAFTER, ",", 1) ; IF CM > 0 AND CM < E THEN E = CM
+            CB2 = INDEX(QAFTER, "}", 1) ; IF CB2 > 0 AND CB2 < E THEN E = CB2
+            CB3 = INDEX(QAFTER, "]", 1) ; IF CB3 > 0 AND CB3 < E THEN E = CB3
+            VAL = TRIM(QAFTER[1, E - 1])
          END
       END
    END
