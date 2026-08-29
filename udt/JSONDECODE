@@ -68,7 +68,7 @@ FUNCTION JSONDECODE(JSON, SPEC)
          END
       END
    NEXT AI
-   RETURN RESULT
+   RETURN(RESULT)
 
 * QVALUE: VAL = the value of "KEY":... in SRC (or "" if absent).
 *

@@ -75,7 +75,7 @@ FUNCTION JSONENCODE(REC, SPEC)
    NEXT AI
 
    JOUT := "}"
-   RETURN JOUT
+   RETURN(JOUT)
 
 * EMITKEY: append  "lower(name)":  (name lowercased then escaped)
 EMITKEY:
