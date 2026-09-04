@@ -49,8 +49,53 @@ jobs:
   #
   # Both directions are set explicitly, for the same reason: leaving the stable
   # case alone means it keeps whatever that race happened to leave behind.
+  # ---- uv and jbase: the same BASIC codec, staged on a hosted runner ---------
+  # json's non-mvx side is pure BASIC (JSONDECODE/JSONENCODE, no CallC), so
+  # there is nothing to compile and nothing os- or arch-specific: `any-any-le`,
+  # built here rather than in a licensed container.
+  #
+  # udt still goes through udt-build above.  It does not need to either -- that
+  # job takes the self-hosted UniData runner to copy three BASIC files -- but
+  # changing the shape of an artifact that is already published is a separate
+  # change from adding two that are not.
+  #
+  # AFTER source and ONE AT A TIME: each upload creates the release if it is not
+  # there yet, so jobs starting together race and all but one lose with
+  # `already_exists` on tag_name, leaving a release that looks complete unless
+  # you count the assets (curl-cmd#7).
+  account:
+    needs: [source]
+    strategy:
+      max-parallel: 1
+      matrix:
+        system: [uv, jbase]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Stage the ${{ matrix.system }} codec
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME}"
+          BASE="mvx-lang_json-$VER-${{ matrix.system }}-any-any-le"
+          rm -rf dist && mkdir -p dist
+          sh build-pkg.sh dist
+          tar czf "$BASE.tar.gz" -C dist .
+          sha256sum "$BASE.tar.gz" > "$BASE.tar.gz.sha256"
+          echo "tarball=$BASE.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "checksum=$BASE.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+      - name: Publish the ${{ matrix.system }} asset
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            ${{ steps.pkg.outputs.tarball }}
+            ${{ steps.pkg.outputs.checksum }}
+          fail_on_unmatched_files: true
+
   mark:
-    needs: [source, udt-binary]
+    needs: [source, udt-binary, account]
     runs-on: ubuntu-latest
     steps:
       - name: Say what this release is
