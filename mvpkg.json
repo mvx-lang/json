@@ -1,5 +1,6 @@
 {
  "name": "mvx-lang/json",
+ "artifact": "json",
  "version": "1.3.0",
  "description": "JSON encode/decode (JSONENCODE, JSONDECODE) with MAPFIELD projection",
  "license": "GPL-2.0-only",
