@@ -27,4 +27,15 @@ cp "$SRC/udt/JSONENCODE" "$STAGE/BP/JSONENCODE"
 for f in mvpkg.json PKG LICENSE README.md; do
    if [ -f "$SRC/$f" ]; then cp "$SRC/$f" "$STAGE/"; fi
 done
+# EVERY STAGED SOURCE GETS A TRAILING NEWLINE.  UniVerse's compiler rejects a
+# source whose last line is unterminated -- "End of File unexpected, Was
+# expecting: ';', End of Line" -- and the repo's items do not all have one, so this
+# is not cosmetic: without it the uv artifact cannot be compiled on the target at
+# all, and the package installs as a directory of sources that never become
+# programs.  Appending only when it is missing keeps re-staging idempotent.
+for f in "$STAGE"/BP/*; do
+   [ -f "$f" ] || continue
+   [ -n "$(tail -c 1 "$f")" ] && printf '\n' >> "$f"
+done
+
 echo "build-pkg: staged the json BASIC codec"
