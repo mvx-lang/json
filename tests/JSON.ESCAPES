@@ -1,0 +1,55 @@
+   PROGRAM JSON.ESCAPES
+* json — escape handling for the portable (BASIC) codec.  GPL-2.0-only.
+*
+* Run it in an account with the json package deployed:
+*
+*   UniData    BASIC BP JSON.ESCAPES ; RUN BP JSON.ESCAPES
+*   UniVerse   BASIC BP JSON.ESCAPES ; RUN BP JSON.ESCAPES
+*   jBASE      BASIC BP JSON.ESCAPES ; RUN BP JSON.ESCAPES
+*
+* It prints FAILURES=0 when the codec is right.  Every case here comes from a
+* bug that shipped, so none of them is hypothetical:
+*
+*   1  the round-trip the codec is built on did not survive one non-ASCII
+*      character -- nothing decoded \u00XX, so encode+decode of an em dash came
+*      back as 31 characters of literal escape text
+*   2  a real — from the registry printed as "u2014" in MVPKG list
+*   3  \u00XX has to stay ONE byte or (1) cannot round-trip
+*   4  a codepoint above U+FFFF arrives as a surrogate PAIR and the halves have
+*      to be recombined
+*   5  the named escapes, so fixing the above did not break them
+   DEFFUN JSONENCODE(A, B)
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
+   BS = CHAR(92) ; Q = CHAR(34) ; FAILS = 0
+   SPEC = "" ; SPEC<-1> = MAPFIELD("d", 1, "", "", "")
+   EMDASH = CHAR(226) : CHAR(128) : CHAR(148)
+*
+   REC = "" ; REC<1> = "A " : EMDASH : " B"
+   J = JSONENCODE(REC, SPEC)
+   R = JSONDECODE(J, SPEC)
+   OK = (R<1> = REC<1>) ; IF NOT(OK) THEN FAILS += 1
+   PRINT "1 roundtrip utf8      ok=" : OK : "  enc=[" : J : "]"
+*
+   J2 = "{" : Q:"d":Q:":":Q:"A ":BS:"u2014 B":Q : "}"
+   R2 = JSONDECODE(J2, SPEC)
+   OK = (R2<1> = "A " : EMDASH : " B") ; IF NOT(OK) THEN FAILS += 1
+   PRINT "2 decode u2014        ok=" : OK : "  len=" : LEN(R2<1>) : " (want 7)"
+*
+   J3 = "{" : Q:"d":Q:":":Q:BS:"u00e9":Q : "}"
+   R3 = JSONDECODE(J3, SPEC)
+   OK = (R3<1> = CHAR(233)) ; IF NOT(OK) THEN FAILS += 1
+   PRINT "3 u00e9 is one byte   ok=" : OK : "  len=" : LEN(R3<1>) : " (want 1)"
+*
+   J4 = "{" : Q:"d":Q:":":Q:BS:"ud83d":BS:"ude00":Q : "}"
+   R4 = JSONDECODE(J4, SPEC)
+   W4 = CHAR(240) : CHAR(159) : CHAR(152) : CHAR(128)
+   OK = (R4<1> = W4) ; IF NOT(OK) THEN FAILS += 1
+   PRINT "4 surrogate pair      ok=" : OK : "  len=" : LEN(R4<1>) : " (want 4)"
+*
+   J5 = "{" : Q:"d":Q:":":Q:"a":BS:"nb":BS:"tc":Q : "}"
+   R5 = JSONDECODE(J5, SPEC)
+   OK = (R5<1> = "a" : CHAR(10) : "b" : CHAR(9) : "c") ; IF NOT(OK) THEN FAILS += 1
+   PRINT "5 named escapes       ok=" : OK
+*
+   PRINT "FAILURES=" : FAILS

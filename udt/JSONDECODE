@@ -113,14 +113,14 @@ QVALUE:
                      * escapes are the ones JSONENCODE emits by name.
                      QNX = QAFTER[I+1,1]
                      BEGIN CASE
-                        CASE QNX = "n" ; VAL := CHAR(10)
-                        CASE QNX = "t" ; VAL := CHAR(9)
-                        CASE QNX = "r" ; VAL := CHAR(13)
-                        CASE QNX = "b" ; VAL := CHAR(8)
-                        CASE QNX = "f" ; VAL := CHAR(12)
-                        CASE 1        ; VAL := QNX
+                        CASE QNX = "n" ; VAL := CHAR(10) ; I += 2
+                        CASE QNX = "t" ; VAL := CHAR(9)  ; I += 2
+                        CASE QNX = "r" ; VAL := CHAR(13) ; I += 2
+                        CASE QNX = "b" ; VAL := CHAR(8)  ; I += 2
+                        CASE QNX = "f" ; VAL := CHAR(12) ; I += 2
+                        CASE QNX = "u" ; GOSUB QUNI
+                        CASE 1         ; VAL := QNX ; I += 2
                      END CASE
-                     I += 2
                   CASE QCH = DQ
                      QDONE = 1
                   CASE 1
@@ -137,4 +137,69 @@ QVALUE:
          END
       END
    END
+   RETURN
+
+* QUNI — the \uXXXX at I in QAFTER, appended to VAL, I advanced past it.
+*
+* TWO RANGES, BECAUSE TWO THINGS PRODUCE THESE ESCAPES.
+*
+* \u00XX IS A BYTE.  JSONENCODE above escapes every byte over 126 that way, one
+* per byte, so a UTF-8 em dash goes out as \u00e2\u0080\u0094.  Decoding those
+* back to bytes is what makes the pair round-trip, and it is byte-transparent:
+* whatever encoding the data was in comes back unchanged.  Nothing handled these
+* at all before, so `A — B` encoded and decoded came back as the 31-character
+* `A u00323236u00313238u00313438 B` -- the round-trip this codec is built on
+* did not survive one non-ASCII character.
+*
+* ABOVE U+00FF IT IS A CODEPOINT, and can only have come from a real JSON
+* producer, so it is emitted as UTF-8.  The registry writes package manifests
+* that way -- mapfield's description carries \u2014 -- and MVPKG list printed
+* `MAPFIELD u2014 the %MAP% ...` for want of this.
+*
+* A codepoint above U+FFFF arrives as a SURROGATE PAIR (a high in D800-DBFF then
+* a low in DC00-DFFF); the halves are recombined before encoding, because
+* encoding them separately produces two characters that are not the one sent and
+* neither is valid alone.
+*
+* No byte produced here can be 252, 253 or 254 -- valid UTF-8 never uses them --
+* so a decoded value cannot forge a subvalue, value or attribute mark.
+*
+* Q-PREFIXED NAMES, for the reason QVALUE gives above: a GOSUB shares the whole
+* variable space and this runs inside the association loop.
+QUNI:
+   QUHEX = QAFTER[I + 2, 4] ; GOSUB QUHEXV
+   QUCP = QUNUM
+   I += 6
+   IF QUCP >= 55296 AND QUCP <= 56319 THEN
+      IF QAFTER[I, 2] = BS : "u" THEN
+         QUHEX = QAFTER[I + 2, 4] ; GOSUB QUHEXV
+         IF QUNUM >= 56320 AND QUNUM <= 57343 THEN
+            QUCP = 65536 + (QUCP - 55296) * 1024 + (QUNUM - 56320)
+            I += 6
+         END
+      END
+   END
+   BEGIN CASE
+      CASE QUCP < 256
+         VAL := CHAR(QUCP)
+      CASE QUCP < 2048
+         VAL := CHAR(192 + INT(QUCP / 64)) : CHAR(128 + MOD(QUCP, 64))
+      CASE QUCP < 65536
+         VAL := CHAR(224 + INT(QUCP / 4096)) : CHAR(128 + MOD(INT(QUCP / 64), 64)) : CHAR(128 + MOD(QUCP, 64))
+      CASE 1
+         VAL := CHAR(240 + INT(QUCP / 262144)) : CHAR(128 + MOD(INT(QUCP / 4096), 64)) : CHAR(128 + MOD(INT(QUCP / 64), 64)) : CHAR(128 + MOD(QUCP, 64))
+   END CASE
+   RETURN
+
+* QUHEXV — QUNUM = the four hex digits in QUHEX.  A digit that is not one reads
+* as zero rather than aborting: a mangled escape should cost its own character,
+* not the rest of the value.
+QUHEXV:
+   QUNUM = 0
+   FOR QUHI = 1 TO 4
+      QUHC = OCONV(QUHEX[QUHI, 1], "MCU")
+      QUHV = INDEX("0123456789ABCDEF", QUHC, 1) - 1
+      IF QUHV < 0 THEN QUHV = 0
+      QUNUM = QUNUM * 16 + QUHV
+   NEXT QUHI
    RETURN
