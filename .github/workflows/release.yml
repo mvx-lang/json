@@ -20,7 +20,26 @@ on:
 permissions:
   contents: write
 jobs:
+  # THE MANIFESTS MUST NAME THE TAG, and this runs before anything is built so a
+  # mismatch fails the release instead of shipping in it.  mvpkg.json said 1.3.0
+  # through the 1.4.0 and 1.4.1 releases and PKG line 2 said "1.3", so every
+  # artifact declared a version two releases behind the tag it shipped under
+  # (#28).  Nothing resolves against those fields, which is exactly why it went
+  # unnoticed for that long.
+  #
+  # Every other job depends on this one, including the ones whose staging lives
+  # outside this repo (udt-build, publish-source) -- they all copy the in-tree
+  # PKG and mvpkg.json, so checking those two files once covers all four
+  # artifacts.
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: The manifests declare the tag
+        run: sh tests/manifest-version.sh "${GITHUB_REF_NAME}"
+
   source:
+    needs: [manifests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
