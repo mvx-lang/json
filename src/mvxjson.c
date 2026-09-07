@@ -145,6 +145,19 @@ static char *jstr(const char **pp, const char *e, size_t *outlen) {
             case 'r':  jb_raw(&b, "\r", 1); break;
             case 't':  jb_raw(&b, "\t", 1); break;
             case 'u': {
+                /* TWO RANGES.  \u00XX is a BYTE: jb_str above escapes every
+                   non-ASCII byte that way, one per byte, so decoding it back to
+                   a byte is what makes this codec byte-exact for MVX's Latin-1
+                   data.  That half is unchanged.
+
+                   Above U+00FF the escape cannot have come from jb_str -- it
+                   never emits one -- so it came from a real JSON producer and
+                   means a CODEPOINT.  It used to be truncated with `v & 0xff`,
+                   turning U+2014 into byte 0x14, a control character; the
+                   registry's package manifests carry \u2014 and it arrived as
+                   one wrong byte.  Emitted as UTF-8 now, which is the same
+                   split the portable BASIC codec makes (udt/JSONDECODE, QUNI),
+                   so the two implementations agree on every input. */
                 unsigned v = 0;
                 for (int k = 0; k < 4 && p < e; k++, p++) {
                     char h = *p; v <<= 4;
@@ -152,8 +165,47 @@ static char *jstr(const char **pp, const char *e, size_t *outlen) {
                     else if (h >= 'a' && h <= 'f') v |= (unsigned)(h - 'a' + 10);
                     else if (h >= 'A' && h <= 'F') v |= (unsigned)(h - 'A' + 10);
                 }
-                char ch = (char)(v & 0xff);   /* Latin-1: \u00XX -> byte XX */
-                jb_raw(&b, &ch, 1);
+                /* A codepoint above U+FFFF arrives as a SURROGATE PAIR (a high
+                   in D800-DBFF then a low in DC00-DFFF).  Encoding the halves
+                   separately produces two characters that are not the one sent,
+                   and neither is valid alone, so recombine first. */
+                if (v >= 0xD800 && v <= 0xDBFF && (size_t)(e - p) >= 6
+                    && p[0] == '\\' && p[1] == 'u') {
+                    unsigned lo = 0; const char *q = p + 2; int k = 0;
+                    for (; k < 4 && q < e; k++, q++) {
+                        char h = *q; lo <<= 4;
+                        if (h >= '0' && h <= '9') lo |= (unsigned)(h - '0');
+                        else if (h >= 'a' && h <= 'f') lo |= (unsigned)(h - 'a' + 10);
+                        else if (h >= 'A' && h <= 'F') lo |= (unsigned)(h - 'A' + 10);
+                        else break;
+                    }
+                    if (k == 4 && lo >= 0xDC00 && lo <= 0xDFFF) {
+                        v = 0x10000u + ((v - 0xD800u) << 10) + (lo - 0xDC00u);
+                        p = q;
+                    }
+                }
+                /* No byte produced here can be 252, 253 or 254 -- valid UTF-8
+                   never uses them -- so a decoded value cannot forge a
+                   subvalue, value or attribute mark. */
+                if (v <= 0xFF) {
+                    char ch = (char)v;
+                    jb_raw(&b, &ch, 1);
+                } else if (v < 0x800) {
+                    char u2[2] = { (char)(0xC0 | (v >> 6)),
+                                   (char)(0x80 | (v & 0x3F)) };
+                    jb_raw(&b, u2, 2);
+                } else if (v < 0x10000) {
+                    char u3[3] = { (char)(0xE0 | (v >> 12)),
+                                   (char)(0x80 | ((v >> 6) & 0x3F)),
+                                   (char)(0x80 | (v & 0x3F)) };
+                    jb_raw(&b, u3, 3);
+                } else {
+                    char u4[4] = { (char)(0xF0 | (v >> 18)),
+                                   (char)(0x80 | ((v >> 12) & 0x3F)),
+                                   (char)(0x80 | ((v >> 6) & 0x3F)),
+                                   (char)(0x80 | (v & 0x3F)) };
+                    jb_raw(&b, u4, 4);
+                }
                 break;
             }
             default: { char ch = c; jb_raw(&b, &ch, 1); }
