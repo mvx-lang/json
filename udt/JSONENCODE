@@ -11,6 +11,15 @@ FUNCTION JSONENCODE(REC, SPEC)
 * conv (attr 3 of the spec) is applied with OCONV before typing.  GPL-2.0-only.
    DQ = CHAR(34)
    BS = CHAR(92)
+* HEX BUILT BY HAND, because OCONV(n, "MX") is not portable.  On UniData it is
+* number-to-hex and gives "E2"; on UniVerse "MX" hex-encodes a STRING, so the
+* number 226 is read as the text "226" and comes back "323236" -- and a byte
+* over 126 was escaped as \u00323236, three times too long and not the byte.
+* Measured: encoding one em dash produced
+*   UniData    \u00e2\u0080\u0094      (right)
+*   UniVerse   \u00323236\u00313238\u00313438  (nothing like it)
+* An index into a digit string is the same arithmetic on every port.
+   HXD = "0123456789abcdef"
    NF = DCOUNT(SPEC, @AM)
    JOUT = "{"
    FIRST = 1
@@ -117,9 +126,7 @@ ESCSTR:
          CASE CC = 13                ; ESC := BS : "r"
          CASE CC = 9                 ; ESC := BS : "t"
          CASE CC < 32 OR CC >= 127
-            HX = OCONV(CC, "MX")
-            IF LEN(HX) < 2 THEN HX = "0" : HX
-            ESC := BS : "u00" : OCONV(HX, "MCL")
+            ESC := BS : "u00" : HXD[INT(CC / 16) + 1, 1] : HXD[MOD(CC, 16) + 1, 1]
          CASE 1                      ; ESC := CH
       END CASE
    NEXT CI
