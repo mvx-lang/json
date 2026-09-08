@@ -4,10 +4,10 @@
 #
 #   sh build-pkg.sh <stagedir>
 #
-# json's non-mvx side is PURE BASIC -- JSONDECODE and JSONENCODE, no CallC, no
-# native build (src/mvxjson.c is the mvx extension and is built with mvx).  The
-# same two functions serve udt, uv and jbase, so this stages the same tree for
-# each and only the system name in the artifact key differs.
+# json is PURE BASIC -- JSONDECODE and JSONENCODE, no CallC, no native build.
+# The same two functions serve udt, uv and jbase, so this stages the same tree
+# for each and only the system name in the artifact key differs.  (mvx is not a
+# target: its runtime provides JSONENCODE/JSONDECODE built in, mvx#169.)
 #
 # Contents at the root, not wrapped in a json/ directory, to match what
 # build-udt.sh has always staged -- so all three artifacts unpack the same way
@@ -22,8 +22,8 @@ STAGE="${1:?usage: build-pkg.sh <stagedir>}"
 SRC="$(cd "$(dirname "$0")" && pwd)"
 
 mkdir -p "$STAGE/BP"
-cp "$SRC/udt/JSONDECODE" "$STAGE/BP/JSONDECODE"
-cp "$SRC/udt/JSONENCODE" "$STAGE/BP/JSONENCODE"
+cp "$SRC/BP/JSONDECODE" "$STAGE/BP/JSONDECODE"
+cp "$SRC/BP/JSONENCODE" "$STAGE/BP/JSONENCODE"
 for f in mvpkg.json PKG LICENSE README.md; do
    if [ -f "$SRC/$f" ]; then cp "$SRC/$f" "$STAGE/"; fi
 done

@@ -1,6 +1,7 @@
-# Release json on a version tag: a portable source package plus the udt BASIC
-# codec.  (The mvx native binary is built into mvx itself via MVX_PACKAGES, not
-# shipped here.)  Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only.
+# Release json on a version tag: a portable source package plus the BASIC codec
+# for udt, uv and jbase.  (mvx is not a target — its runtime provides
+# JSONENCODE/JSONDECODE built in, mvx#169.)
+# Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only.
 name: release
 on:
   push:
