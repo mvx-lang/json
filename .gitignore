@@ -11,3 +11,6 @@ LIB/
 # account is born with it, and a clone gets its own (mv_git#95).
 VOC.DICT/
 
+
+# The mapfield dependency, cloned by CI to run tests/JSON.ESCAPES (#40).
+.deps/
