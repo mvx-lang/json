@@ -1,0 +1,62 @@
+# json — what can be checked without an MV system, on every push and PR.
+# Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+#
+# WHY THIS EXISTS.  There was no ci.yml at all: release.yml triggers only on a
+# tag, so its `manifests` job -- the one that stops a bad manifest shipping --
+# first ran when a release was already being cut.  A pull request could not
+# tell you the manifests agreed, and one did not: #35 dropped the mvx arm and
+# updated mvpkg.json and the README, while PKG line 4 went on declaring
+# `mvx udt uv jbase` through a release.
+#
+# WHAT IT DELIBERATELY DOES NOT DO.  tests/JSON.ESCAPES is the real test of
+# this package -- it exercises the codec and prints FAILURES=0 -- and it has
+# to run in an account on UniData, UniVerse or jBASE, which means the
+# self-hosted runners.  That job is worth having and is not written here,
+# because writing one blind against machines this cannot reach would most
+# likely produce a red run nobody can debug.  So JSON.ESCAPES is still run by
+# hand, and that is the larger gap, not this one.
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    name: source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # THE MANIFESTS MUST AGREE WITH EACH OTHER, which is checkable without a
+      # tag.  manifest-version.sh compares both files against the version it is
+      # given and compares their systems lists to each other, so handing it the
+      # version out of mvpkg.json asserts exactly the drift that shipped: PKG
+      # saying something mvpkg.json does not.  The release still checks both
+      # against the tag, which is the part only a tag can answer.
+      - name: The manifests agree with each other
+        run: |
+          set -eu
+          want=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                   mvpkg.json | head -1)
+          if [ -z "$want" ]; then
+            echo "::error::mvpkg.json has no version to check against"
+            exit 1
+          fi
+          echo "mvpkg.json declares $want -- checking PKG against it"
+          sh tests/manifest-version.sh "$want"
+
+      # The three staging scripts are the only executable code in this repo
+      # that is not BASIC, and two of them run outside it (the udt builder and
+      # mvx's publish-source copy these manifests).  They are clean today, so
+      # this holds that rather than discovering it during a release.
+      - name: The shell scripts lint
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends shellcheck
+          shellcheck -S warning build-pkg.sh build-udt.sh tests/manifest-version.sh
