@@ -1,5 +1,5 @@
 #!/bin/sh
-# json — assert the in-tree manifests declare the version being released.
+# json — assert the in-tree manifests agree with each other and with the tag.
 # Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 #
 #   sh tests/manifest-version.sh <version>
@@ -48,7 +48,30 @@ if [ -f "$ROOT/PKG" ]; then
   fi
 fi
 
+# AND THE SYSTEMS LISTS MUST AGREE, for the same reason the versions must.
+# #35 dropped the mvx arm -- mvx has JSONENCODE/JSONDECODE in its runtime, so a
+# package could not displace them if it tried -- and updated mvpkg.json and the
+# README, but PKG line 4 still said "mvx udt uv jbase".  Both files ship in
+# every artifact, so the published package declared a system it had been
+# deliberately removed from, while line 5 of the same file excluded mvx from
+# its only dependency.  Nothing resolves against PKG's copy, which is exactly
+# why it survived the release -- the same blind spot the version check above
+# exists for.
+sysline=$(sed -n '4p' "$ROOT/PKG" 2>/dev/null | tr -s ' \r' ' ' | sed 's/^ *//;s/ *$//')
+sysjson=$(sed -n '/"systems"/,/]/p' "$ROOT/mvpkg.json" 2>/dev/null \
+          | sed -n 's/.*"\([a-z0-9_]*\)".*/\1/p' | grep -v '^systems$' | tr '\n' ' ' \
+          | sed 's/ *$//')
+if [ -n "$sysline" ] || [ -n "$sysjson" ]; then
+  if [ "$sysline" = "$sysjson" ]; then
+    printf '  ok   both manifests declare the systems "%s"\n' "$sysline"
+  else
+    printf '  FAIL PKG line 4 says "%s", mvpkg.json says "%s"\n' \
+           "$sysline" "$sysjson"; rc=1
+  fi
+fi
+
 if [ "$rc" -ne 0 ]; then
-  printf 'manifest-version: bump the manifests to %s before tagging\n' "$WANT" >&2
+  printf 'manifests: make the two manifests agree, and name %s, before tagging\n' \
+         "$WANT" >&2
 fi
 exit "$rc"

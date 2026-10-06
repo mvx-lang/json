@@ -1,6 +1,6 @@
 json
 1.5.1
 JSON encode/decode (JSONENCODE, JSONDECODE)
-mvx udt uv jbase
+udt uv jbase
 mapfield@!mvx
 +mvpkg
