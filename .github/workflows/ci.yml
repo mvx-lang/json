@@ -15,10 +15,11 @@
 # the em dash printing as `u2014` in MVPKG list), so that was the suite which
 # would have caught them, sitting unrun (#40).  The `jbase` job below runs it.
 #
-# jBASE FIRST, and so far only.  `jbase-run` is a fresh container, and so a
-# fresh account space, every run -- the deterministic one of the three.  udt and
-# uv follow once this shape is proven, rather than three sets of unknowns at
-# once.
+# ALL THREE SYSTEMS, one job each, because a codec that is right on one of
+# them is not thereby right on the others -- the bugs those cases came from
+# were differences in how a platform handles a byte, which is the whole reason
+# this package has three arms.  They share `.github/mv-escapes.sh`, so the
+# assertions cannot drift between them.
 name: ci
 
 on:
@@ -64,51 +65,59 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends shellcheck
           shellcheck -S warning build-pkg.sh build-udt.sh \
-            tests/manifest-version.sh .github/jbase-ci.sh
+            tests/manifest-version.sh .github/mv-escapes.sh
 
-  # ---- jBASE: deploy into an account and run the codec's own test ------------
+  # ---- the MV systems: deploy into an account and run the codec's own test ---
   # The package is pure BASIC -- JSONENCODE, JSONDECODE and mapfield's MAPFIELD
-  # are three plain FUNCTIONs with no $INCLUDE and nothing native -- so this
-  # needs no build, only somewhere to compile and CATALOG them.  The work is in
-  # .github/jbase-ci.sh so it can be run by hand the same way CI runs it.
+  # are three plain FUNCTIONs with no $INCLUDE and nothing native -- so none of
+  # these needs a build, only somewhere to compile and CATALOG them.
+  #
+  # ONE SCRIPT, THREE ARMS.  .github/mv-escapes.sh makes the account and starts
+  # the session per platform and then does the identical thing in each, so the
+  # part that must not drift -- what counts as a pass -- exists once.  It can be
+  # run by hand exactly as CI runs it:
+  #
+  #   udt-run   'sh /pkg/.github/mv-escapes.sh udt'
+  #   uv-run    'sh /pkg/.github/mv-escapes.sh uv'
+  #   jbase-run 'sh /pkg/.github/mv-escapes.sh jbase'
+  #
+  # They do not `need` each other: three separate self-hosted runners, so they
+  # run at once, and one platform being broken should not hide the other two.
   jbase:
     name: jbase
     runs-on: [self-hosted, linux, jbase]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-
-      # JSON.ESCAPES CALLS MAPFIELD(), so the dependency has to be in the
-      # account.  THE RELEASE, NOT develop: the mapfield a user gets is the one
-      # MVPKG installs, and PKG declares the dependency unversioned, so that is
-      # the latest stable release.  Tracking mapfield's develop would turn this
-      # job red for changes nobody has yet, and green for a release that broke
-      # json -- which is the wrong way round for both.
-      - name: Check out mapfield at its latest stable release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -eu
-          tag=$(curl -fsSL \
-                  -H "Authorization: Bearer $GH_TOKEN" \
-                  -H "Accept: application/vnd.github+json" \
-                  https://api.github.com/repos/mvx-lang/mapfield/releases/latest \
-                | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-                | head -1)
-          if [ -z "$tag" ]; then
-            echo "::error::could not resolve mapfield's latest stable release"
-            exit 1
-          fi
-          echo "mapfield: $tag"
-          rm -rf .deps
-          mkdir -p .deps
-          git clone -q --depth 1 --branch "$tag" \
-            https://github.com/mvx-lang/mapfield.git .deps/mapfield
-          # The clone succeeding is not the same as the file being there.
-          test -f .deps/mapfield/BP/MAPFIELD
-
-      - name: Set up the jBASE builder
-        uses: mvx-lang/mv-package-registry/.github/actions/setup-jbase@main
-
+      - uses: ./.github/actions/mapfield
+        with:
+          token: ${{ github.token }}
+      - uses: mvx-lang/mv-package-registry/.github/actions/setup-jbase@main
       - name: Run JSON.ESCAPES in a jBASE account
-        run: jbase-run 'sh /pkg/.github/jbase-ci.sh'
+        run: jbase-run 'sh /pkg/.github/mv-escapes.sh jbase'
+
+  udt:
+    name: udt
+    runs-on: [self-hosted, linux, udt]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/mapfield
+        with:
+          token: ${{ github.token }}
+      - uses: mvx-lang/mv-package-registry/.github/actions/setup-udt@main
+      - name: Run JSON.ESCAPES in a UniData account
+        run: udt-run 'sh /pkg/.github/mv-escapes.sh udt'
+
+  uv:
+    name: uv
+    runs-on: [self-hosted, linux, uv]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/mapfield
+        with:
+          token: ${{ github.token }}
+      - uses: mvx-lang/mv-package-registry/.github/actions/setup-uv@main
+      - name: Run JSON.ESCAPES in a UniVerse account
+        run: uv-run 'sh /pkg/.github/mv-escapes.sh uv'
