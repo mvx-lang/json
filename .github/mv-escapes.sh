@@ -118,21 +118,59 @@ esac
 cd "$ACCT"
 
 # BP HAS TO BE A DIRECTORY FILE, or copying OS files into it produces no
-# records at all.  udt's newacct and uv's account birth both make one; jBASE
-# does not, and TYPE=UD is the directory form there.
+# records at all, and the failure is silent: `BASIC BP X` reports a missing
+# record, or on UniVerse "compiled 0 program(s)", and neither says anything
+# about files.  So each arm makes one and then it is ASSERTED.
 #
-# This is asserted rather than assumed because the failure is silent: a hashed
-# BP would take the copies as ordinary files in a directory nothing reads, and
-# `BASIC BP X` would report a missing record rather than anything about files.
-if [ "$PLATFORM" = jbase ]; then
-    printf 'CREATE-FILE BP 1 11 TYPE=UD\nQUIT\n' | "$MV" >/dev/null 2>&1 || true
-fi
-[ -d "$ACCT/BP" ] || {
+# ONLY udt IS BORN WITH ONE.  That was measured, not assumed, and the
+# assumption cost a CI run: newacct builds a standard account with BP in it,
+# while a UniVerse account arrives with a VOC, VOCLIB and &SAVEDLISTS& and no
+# BP whatever, and jBASE has no such notion at all.
+MKFILE_OUT=""
+case "$PLATFORM" in
+udt)
+    : ;;
+uv)
+    # CREATE.FILE ASKS SEVEN QUESTIONS, not six: modulo, separation and type
+    # for the DICTionary, the same three for the DATA part, and then a FILE
+    # DESCRIPTION.
+    #   dict: modulo 1, separation 2, type 3  (hashed)
+    #   data: modulo 1, separation 2, type 19 (directory -- it holds sources)
+    #
+    # THE DESCRIPTION IS THE TRAP, and it is answered with an EMPTY line on
+    # purpose: UniVerse stores it in VOC attribute 1 as "F <description>", and
+    # anything that compares attribute 1 to "F" then cannot see the file at
+    # all.  An empty answer leaves a clean "F".
+    #
+    # IT RUNS BEFORE THE DIRECTORY EXISTS.  CREATE.FILE is what makes the VOC
+    # pointer, the dictionary and the directory together, and it refuses once
+    # the directory is there -- and the VOC pointer, not the dictionary on
+    # disk, is what makes BP usable.
+    #
+    # AND ITS REFUSAL IS THE ONLY THING THAT SAYS WHY, so it is captured and
+    # printed below rather than thrown away.  Throwing it away cost mv_git four
+    # CI runs on a message that named neither the reason nor the remedy
+    # (mv_git#226).
+    MKFILE_OUT=$(printf 'CREATE.FILE BP\n1\n2\n3\n1\n2\n19\n\nQUIT\n' \
+                   | "$MV" 2>&1) || true
+    # Another session gone, and its seat may not be back yet (mv_git#187).
+    sleep 2
+    ;;
+jbase)
+    MKFILE_OUT=$(printf 'CREATE-FILE BP 1 11 TYPE=UD\nQUIT\n' | "$MV" 2>&1) || true
+    ;;
+esac
+
+if [ ! -d "$ACCT/BP" ]; then
     echo "::error::$ACCT/BP is not a directory file -- nothing can be compiled" >&2
+    if [ -n "$MKFILE_OUT" ]; then
+        echo "---- what the file creation said ----" >&2
+        printf '%s\n' "$MKFILE_OUT" >&2
+    fi
     echo "---- $ACCT ----" >&2
     ls -la "$ACCT" >&2 || true
     exit 1
-}
+fi
 
 # The package's two functions, mapfield's one, and the test itself.
 cp "$MAPFIELD/BP/MAPFIELD" "$ACCT/BP/MAPFIELD"
