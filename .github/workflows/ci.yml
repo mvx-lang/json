@@ -8,13 +8,18 @@
 # updated mvpkg.json and the README, while PKG line 4 went on declaring
 # `mvx udt uv jbase` through a release.
 #
-# WHAT IT DELIBERATELY DOES NOT DO.  tests/JSON.ESCAPES is the real test of
-# this package -- it exercises the codec and prints FAILURES=0 -- and it has
-# to run in an account on UniData, UniVerse or jBASE, which means the
-# self-hosted runners.  That job is worth having and is not written here,
-# because writing one blind against machines this cannot reach would most
-# likely produce a red run nobody can debug.  So JSON.ESCAPES is still run by
-# hand, and that is the larger gap, not this one.
+# AND THE REAL TEST.  tests/JSON.ESCAPES exercises the codec and prints
+# FAILURES=0, and for a while nothing ran it: it needs an account on UniData,
+# UniVerse or jBASE, so it was run by hand, which means it was run when someone
+# remembered to.  Every case in it comes from a bug that shipped (#25, #27, and
+# the em dash printing as `u2014` in MVPKG list), so that was the suite which
+# would have caught them, sitting unrun (#40).  The `jbase` job below runs it.
+#
+# ALL THREE SYSTEMS, one job each, because a codec that is right on one of
+# them is not thereby right on the others -- the bugs those cases came from
+# were differences in how a platform handles a byte, which is the whole reason
+# this package has three arms.  They share `.github/mv-escapes.sh`, so the
+# assertions cannot drift between them.
 name: ci
 
 on:
@@ -59,4 +64,60 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends shellcheck
-          shellcheck -S warning build-pkg.sh build-udt.sh tests/manifest-version.sh
+          shellcheck -S warning build-pkg.sh build-udt.sh \
+            tests/manifest-version.sh .github/mv-escapes.sh
+
+  # ---- the MV systems: deploy into an account and run the codec's own test ---
+  # The package is pure BASIC -- JSONENCODE, JSONDECODE and mapfield's MAPFIELD
+  # are three plain FUNCTIONs with no $INCLUDE and nothing native -- so none of
+  # these needs a build, only somewhere to compile and CATALOG them.
+  #
+  # ONE SCRIPT, THREE ARMS.  .github/mv-escapes.sh makes the account and starts
+  # the session per platform and then does the identical thing in each, so the
+  # part that must not drift -- what counts as a pass -- exists once.  It can be
+  # run by hand exactly as CI runs it:
+  #
+  #   udt-run   'sh /pkg/.github/mv-escapes.sh udt'
+  #   uv-run    'sh /pkg/.github/mv-escapes.sh uv'
+  #   jbase-run 'sh /pkg/.github/mv-escapes.sh jbase'
+  #
+  # They do not `need` each other: three separate self-hosted runners, so they
+  # run at once, and one platform being broken should not hide the other two.
+  jbase:
+    name: jbase
+    runs-on: [self-hosted, linux, jbase]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/mapfield
+        with:
+          token: ${{ github.token }}
+      - uses: mvx-lang/mv-package-registry/.github/actions/setup-jbase@main
+      - name: Run JSON.ESCAPES in a jBASE account
+        run: jbase-run 'sh /pkg/.github/mv-escapes.sh jbase'
+
+  udt:
+    name: udt
+    runs-on: [self-hosted, linux, udt]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/mapfield
+        with:
+          token: ${{ github.token }}
+      - uses: mvx-lang/mv-package-registry/.github/actions/setup-udt@main
+      - name: Run JSON.ESCAPES in a UniData account
+        run: udt-run 'sh /pkg/.github/mv-escapes.sh udt'
+
+  uv:
+    name: uv
+    runs-on: [self-hosted, linux, uv]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/mapfield
+        with:
+          token: ${{ github.token }}
+      - uses: mvx-lang/mv-package-registry/.github/actions/setup-uv@main
+      - name: Run JSON.ESCAPES in a UniVerse account
+        run: uv-run 'sh /pkg/.github/mv-escapes.sh uv'

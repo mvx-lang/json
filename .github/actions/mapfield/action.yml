@@ -1,0 +1,57 @@
+# json — put the mapfield dependency where mv-escapes.sh will look for it.
+# Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+#
+# A composite action because all three MV jobs need this and none of them can
+# share a step any other way.  Three copies of it was the alternative, and the
+# version policy below is exactly the kind of thing that drifts between copies.
+name: Check out mapfield
+description: Clone mvx-lang/mapfield at its latest stable release into .deps/mapfield.
+
+inputs:
+  token:
+    description: A token for the releases API (github.token is enough; the repo is public).
+    required: true
+  path:
+    description: Where to put the clone.
+    required: false
+    default: .deps/mapfield
+
+outputs:
+  tag:
+    description: The mapfield release that was checked out.
+    value: ${{ steps.get.outputs.tag }}
+
+runs:
+  using: composite
+  steps:
+    - id: get
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        DEST: ${{ inputs.path }}
+      run: |
+        set -eu
+        # THE RELEASE, NOT develop.  tests/JSON.ESCAPES calls MAPFIELD(), so
+        # mapfield has to be in the account -- and the mapfield a user gets is
+        # the one MVPKG installs, which is the latest STABLE release, because
+        # PKG declares the dependency unversioned.  Tracking mapfield's develop
+        # would turn these jobs red for changes nobody has yet, and green for a
+        # release that broke json: the wrong way round on both counts.
+        tag=$(curl -fsSL \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                https://api.github.com/repos/mvx-lang/mapfield/releases/latest \
+              | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+              | head -1)
+        if [ -z "$tag" ]; then
+          echo "::error::could not resolve mapfield's latest stable release"
+          exit 1
+        fi
+        echo "mapfield: $tag"
+        rm -rf "$DEST"
+        mkdir -p "$(dirname "$DEST")"
+        git clone -q --depth 1 --branch "$tag" \
+          https://github.com/mvx-lang/mapfield.git "$DEST"
+        # The clone succeeding is not the same as the file being there.
+        test -f "$DEST/BP/MAPFIELD"
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
