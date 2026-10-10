@@ -1,4 +1,4 @@
-# json — put the mapfield dependency where mv-escapes.sh will look for it.
+# json — put the mapfield dependency where the test runner will look for it.
 # Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 #
 # A composite action because all three MV jobs need this and none of them can
