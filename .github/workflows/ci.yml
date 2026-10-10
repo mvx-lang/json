@@ -13,13 +13,14 @@
 # UniVerse or jBASE, so it was run by hand, which means it was run when someone
 # remembered to.  Every case in it comes from a bug that shipped (#25, #27, and
 # the em dash printing as `u2014` in MVPKG list), so that was the suite which
-# would have caught them, sitting unrun (#40).  The `jbase` job below runs it.
+# would have caught them, sitting unrun (#40).  The three jobs below run it.
 #
 # ALL THREE SYSTEMS, one job each, because a codec that is right on one of
 # them is not thereby right on the others -- the bugs those cases came from
 # were differences in how a platform handles a byte, which is the whole reason
-# this package has three arms.  They share `.github/mv-escapes.sh`, so the
-# assertions cannot drift between them.
+# this package has three arms.  They share one runner -- mv-package-registry's
+# mv-package-test action -- so the assertions cannot drift between them, or
+# between this package and any other using it.
 name: ci
 
 on:
@@ -65,21 +66,31 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends shellcheck
           shellcheck -S warning build-pkg.sh build-udt.sh \
-            tests/manifest-version.sh .github/mv-escapes.sh
+            tests/manifest-version.sh
 
   # ---- the MV systems: deploy into an account and run the codec's own test ---
   # The package is pure BASIC -- JSONENCODE, JSONDECODE and mapfield's MAPFIELD
   # are three plain FUNCTIONs with no $INCLUDE and nothing native -- so none of
   # these needs a build, only somewhere to compile and CATALOG them.
   #
-  # ONE SCRIPT, THREE ARMS.  .github/mv-escapes.sh makes the account and starts
-  # the session per platform and then does the identical thing in each, so the
-  # part that must not drift -- what counts as a pass -- exists once.  It can be
-  # run by hand exactly as CI runs it:
+  # THE ACCOUNT WORK IS NOT HERE, and deliberately.  It started here as
+  # .github/mv-escapes.sh and was hoisted into mv-package-registry's
+  # mv-package-test action so mapfield could use it without a copy
+  # (mv-package-registry#65, #42).  Every difference it hides was paid for in CI
+  # runs: CREATE-ACCOUNT and not mkdir on jBASE, only udt being born with a BP,
+  # UniVerse's CREATE.FILE asking seven questions with the description answered
+  # EMPTY so VOC attribute 1 stays a clean "F", one session per run because
+  # UniVerse's licence seats do not come back fast enough for a sequence of
+  # short ones.  Those live once now, so a weak assertion has one home.
   #
-  #   udt-run   'sh /pkg/.github/mv-escapes.sh udt'
-  #   uv-run    'sh /pkg/.github/mv-escapes.sh uv'
-  #   jbase-run 'sh /pkg/.github/mv-escapes.sh jbase'
+  # `cases` IS EXACT, not a minimum: a test that quietly loses a case still
+  # prints FAILURES=0 and still prints no ok=0, so a minimum would go green on a
+  # shrinking suite.  Adding a case to JSON.ESCAPES means raising it.
+  #
+  # .github/actions/mapfield STAYS, because dependency policy belongs to the
+  # consumer: `sources` is a list of paths, so how mapfield reaches .deps is
+  # this repo's business -- and pinning it to mapfield's latest STABLE release
+  # rather than its develop is a policy only json can state.
   #
   # They do not `need` each other: three separate self-hosted runners, so they
   # run at once, and one platform being broken should not hide the other two.
@@ -93,8 +104,12 @@ jobs:
         with:
           token: ${{ github.token }}
       - uses: mvx-lang/mv-package-registry/.github/actions/setup-jbase@main
-      - name: Run JSON.ESCAPES in a jBASE account
-        run: jbase-run 'sh /pkg/.github/mv-escapes.sh jbase'
+      - uses: mvx-lang/mv-package-registry/.github/actions/mv-package-test@main
+        with:
+          platform: jbase
+          sources: .deps/mapfield/BP/MAPFIELD BP/JSONENCODE BP/JSONDECODE
+          test: tests/JSON.ESCAPES
+          cases: 5
 
   udt:
     name: udt
@@ -106,8 +121,12 @@ jobs:
         with:
           token: ${{ github.token }}
       - uses: mvx-lang/mv-package-registry/.github/actions/setup-udt@main
-      - name: Run JSON.ESCAPES in a UniData account
-        run: udt-run 'sh /pkg/.github/mv-escapes.sh udt'
+      - uses: mvx-lang/mv-package-registry/.github/actions/mv-package-test@main
+        with:
+          platform: udt
+          sources: .deps/mapfield/BP/MAPFIELD BP/JSONENCODE BP/JSONDECODE
+          test: tests/JSON.ESCAPES
+          cases: 5
 
   uv:
     name: uv
@@ -119,5 +138,9 @@ jobs:
         with:
           token: ${{ github.token }}
       - uses: mvx-lang/mv-package-registry/.github/actions/setup-uv@main
-      - name: Run JSON.ESCAPES in a UniVerse account
-        run: uv-run 'sh /pkg/.github/mv-escapes.sh uv'
+      - uses: mvx-lang/mv-package-registry/.github/actions/mv-package-test@main
+        with:
+          platform: uv
+          sources: .deps/mapfield/BP/MAPFIELD BP/JSONENCODE BP/JSONDECODE
+          test: tests/JSON.ESCAPES
+          cases: 5
