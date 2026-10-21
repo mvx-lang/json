@@ -105,23 +105,32 @@ jobs:
               } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-  # THE MANIFESTS MUST NAME THE TAG, and this runs before anything is built so a
-  # mismatch fails the release instead of shipping in it.  mvpkg.json said 1.3.0
-  # through the 1.4.0 and 1.4.1 releases and PKG line 2 said "1.3", so every
-  # artifact declared a version two releases behind the tag it shipped under
-  # (#28).  Nothing resolves against those fields, which is exactly why it went
-  # unnoticed for that long.
+  # THE TWO MANIFESTS MUST AGREE WITH EACH OTHER.  It no longer checks them
+  # against the TAG, and that is deliberate (mvx#363): all four artifacts are
+  # stamped at staging now -- publish-source for the source tarball, udt-build
+  # for the udt binary, the account job for uv and jbase -- so the in-tree
+  # version is derived, not authoritative, and requiring it to name the tag
+  # would block exactly the releases stamping makes correct.
   #
-  # Every other job depends on this one, including the ones whose staging lives
-  # outside this repo (udt-build, publish-source) -- they all copy the in-tree
-  # PKG and mvpkg.json, so checking those two files once covers all four
-  # artifacts.
+  # mvpkg.json said 1.3.0 through the 1.4.0 and 1.4.1 releases and PKG line 2
+  # said "1.3" (#28), which is what the version half of this job was added for.
+  # Stamping removes the opportunity rather than guarding it.
+  #
+  # What stamping CANNOT catch is the two files disagreeing with each other
+  # about SYSTEMS -- #38, where PKG still declared an arm mvpkg.json had
+  # dropped.  That is tag-independent, it ships in every artifact because both
+  # files are copied into all four, and it is why this job still exists.
   manifests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: The manifests declare the tag
-        run: sh tests/manifest-version.sh "${GITHUB_REF_NAME}"
+      - name: The manifests agree with each other
+        run: |
+          set -eu
+          want=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                   mvpkg.json | head -1)
+          [ -n "$want" ] || { echo "::error::mvpkg.json has no version"; exit 1; }
+          sh tests/manifest-version.sh "$want"
 
   source:
     needs: [manifests]
@@ -187,6 +196,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      # JUST THE STAMPER.  This job compiles nothing, so it needs no toolchain
+      # -- stamp-manifests.py is standalone Python.  Taken from mvx's `main`,
+      # its RELEASED line, which moves when a release merges and not before:
+      # the right coupling for a script with no compiler dependency, and the
+      # opposite of the default branch.
+      - name: Check out the manifest stamper
+        uses: actions/checkout@v5
+        with:
+          repository: mvx-lang/mvx
+          ref: main
+          path: .mvx-src
+          sparse-checkout: .github/actions/publish-source
+          sparse-checkout-cone-mode: false
+
       - name: Stage the ${{ matrix.system }} codec
         id: pkg
         shell: bash
@@ -196,6 +220,30 @@ jobs:
           BASE="json-$VER-${{ matrix.system }}-any-any-le"
           rm -rf dist && mkdir -p dist
           sh build-pkg.sh dist
+          # THE TAG IS THE SOURCE OF TRUTH (mvx#363).  mvpkg.json said 1.3.0
+          # through the 1.4.0 and 1.4.1 releases and PKG line 2 said "1.3", so
+          # every artifact declared a version two releases behind the tag it
+          # shipped under (#28).  `source` and `udt-binary` already stamp --
+          # publish-source and udt-build both do -- and this was the arm that
+          # did not.
+          #
+          # STAMPED AFTER STAGING, on the staged copy rather than the tree: the
+          # artifact is what has to be honest, and leaving the checkout alone
+          # keeps this job independent of the order the matrix runs in.
+          #
+          # `dist` ITSELF, not dist/json: build-pkg.sh stages the contents at
+          # the root rather than wrapping them in a directory, so that is where
+          # the manifests are.
+          #
+          # And ASSERTED, because a stamper that silently did nothing would
+          # leave exactly the bug it is here to prevent.
+          if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+            python3 .mvx-src/.github/actions/publish-source/stamp-manifests.py \
+              dist "$VER"
+            test "$(sed -n 2p dist/PKG)" = "$VER"
+          else
+            echo "not a tag (${GITHUB_REF_TYPE:-unset} $VER): manifests left as committed"
+          fi
           tar czf "$BASE.tar.gz" -C dist .
           sha256sum "$BASE.tar.gz" > "$BASE.tar.gz.sha256"
           echo "tarball=$BASE.tar.gz" >> "$GITHUB_OUTPUT"
