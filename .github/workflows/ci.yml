@@ -43,8 +43,9 @@ jobs:
       # tag.  manifest-version.sh compares both files against the version it is
       # given and compares their systems lists to each other, so handing it the
       # version out of mvpkg.json asserts exactly the drift that shipped: PKG
-      # saying something mvpkg.json does not.  The release still checks both
-      # against the tag, which is the part only a tag can answer.
+      # saying something mvpkg.json does not.  The release no longer checks
+      # either against the tag: it stamps the tag in (mvx#363), and both
+      # manifests carry 0.0.0-dev so there is nothing to keep in step by hand.
       - name: The manifests agree with each other
         run: |
           set -eu
